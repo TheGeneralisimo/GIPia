@@ -1,47 +1,45 @@
-import io
-import pdfplumber
-import docx
-import pandas as pd
+# ingest.py
+"""Production-ready ingestion script"""
+import os
 from pathlib import Path
 
-def ingest_pdf_bytes(bts):
-    # pdfplumber expects a file-like; use BytesIO
-    with pdfplumber.open(io.BytesIO(bts)) as pdf:
-        pages = [p.extract_text() or '' for p in pdf.pages]
-    text = '\n'.join(pages)
-    if len(text.strip()) < 100:
-        # PDF probablemente escaneado -> fallback minimal (no OCR here)
-        return text
-    return text
+import dotenv
+from langchain.document_loaders import DirectoryLoader, TextLoader, PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
 
-def ingest_docx_bytes(bts):
-    # python-docx doesn't support bytes directly; write to temp file-like
-    f = io.BytesIO(bts)
-    doc = docx.Document(f)
-    return '\n'.join([p.text for p in doc.paragraphs])
+dotenv.load_dotenv()
 
-def ingest_excel_bytes(bts):
-    f = io.BytesIO(bts)
-    sheets = pd.read_excel(f, sheet_name=None)
-    out = []
-    for name, df in sheets.items():
-        out.append(f"=== Hoja: {name} ===")
-        out.append(df.to_csv(index=False))
-    return '\n'.join(out)
+DATA_DIR = Path("data")
+VECTOR_DIR = Path("vectorstore")
 
-def ingest_text_bytes(bts):
-    try:
-        return bts.decode('utf-8')
-    except:
-        return bts.decode('latin-1', errors='ignore')
+def load_documents():
+    docs = []
+    if not DATA_DIR.exists():
+        return docs
+    for file in DATA_DIR.rglob("*"):
+        if file.suffix.lower() == ".txt":
+            docs.extend(TextLoader(str(file)).load())
+        elif file.suffix.lower() == ".pdf":
+            docs.extend(PyPDFLoader(str(file)).load())
+    return docs
 
-def ingest_file(file_bytes, filename):
-    suffix = Path(filename).suffix.lower()
-    if suffix == '.pdf':
-        return ingest_pdf_bytes(file_bytes)
-    if suffix in ('.docx',):
-        return ingest_docx_bytes(file_bytes)
-    if suffix in ('.xls', '.xlsx'):
-        return ingest_excel_bytes(file_bytes)
-    # fallback plain text
-    return ingest_text_bytes(file_bytes)
+def build_vectorstore(docs):
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+    chunks = splitter.split_documents(docs)
+    embeddings = OpenAIEmbeddings()
+    store = FAISS.from_documents(chunks, embeddings)
+    VECTOR_DIR.mkdir(parents=True, exist_ok=True)
+    store.save_local(str(VECTOR_DIR))
+
+def main():
+    docs = load_documents()
+    if not docs:
+        print("No documents found.")
+        return
+    build_vectorstore(docs)
+    print("Vectorstore updated successfully.")
+
+if __name__ == "__main__":
+    main()
