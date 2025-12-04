@@ -1,0 +1,7 @@
+body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:#f5f7fb; color:#111 }
+.container { max-width:800px; margin:30px auto; background:white; padding:20px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.06) }
+.upload { margin-bottom:12px }
+.chat-window { min-height:200px; max-height:400px; overflow:auto; border:1px solid #eee; padding:10px; margin-bottom:12px; background:#fafafa }
+.composer { display:flex; gap:8px }
+input[type=text], input[type=file], input#prompt { flex:1; padding:8px; border-radius:6px; border:1px solid #ddd }
+button { padding:8px 12px; border-radius:6px; border:none; background:#2563eb; color:white; cursor:pointer }
