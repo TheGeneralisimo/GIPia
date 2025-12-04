@@ -1,4 +1,4 @@
-const BACKEND = (location.hostname === 'localhost') ? 'http://localhost:8000' : '<REPLACE_WITH_BACKEND_URL>';
+const BACKEND = (location.hostname === 'localhost') ? 'http://localhost:8000' : 'https://gipia.onrender.com';
 document.getElementById('btnUpload').onclick = async () => {
   const f = document.getElementById('file').files[0];
   if (!f) { alert('Selecciona un archivo'); return; }
