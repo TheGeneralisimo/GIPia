@@ -1,10 +1,9 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from ingest import ingest_file
-from vector_store import load_or_create_index, add_to_index, search_in_index
-import uvicorn
+from langchain_community.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings
 
-app = FastAPI(title="Chat RAG - Backend")
+app = FastAPI(title="Chat RAG Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,25 +12,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Cargar/crear índice en memoria
-index, metadata = load_or_create_index()
+# -------- Cargar VectorStore FAISS --------
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-@app.post("/upload")
-async def upload(file: UploadFile = File(...)):
-    # ingest_file acepta un file-like y filename
-    text = ingest_file(await file.read(), file.filename)
-    added = add_to_index(text, index, metadata, source=file.filename)
-    return {"status": "ok", "indexed_chunks": added}
+# Cargar FAISS desde la carpeta db/
+db = FAISS.load_local(
+    "db",
+    embeddings,
+    allow_dangerous_deserialization=True
+)
+
+@app.get("/ping")
+def ping():
+    return {"status": "ok"}
 
 @app.post("/chat")
 async def chat(payload: dict):
-    prompt = payload.get("prompt", "")
-    if not prompt:
-        return {"response": "Error: envía 'prompt' en JSON"}
-    context = search_in_index(prompt, index, metadata, k=3)
-    # Respuesta simple de RAG; puedes integrar un LLM para mejor formato
-    respuesta = f"Contexto recuperado:\n\n{context}\n\nRespuesta final: (ejemplo automático)"
-    return {"response": respuesta}
+    query = payload.get("prompt", "")
+    if not query:
+        return {"response": "Error: falta 'prompt' en JSON"}
 
-if __name__ == '__main__':
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    docs = db.similarity_search(query, k=3)
+    context = "\n---\n".join([d.page_content for d in docs])
+
+    return {
+        "response": context
+    }
+
+# Motor de arranque para Render
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000)
