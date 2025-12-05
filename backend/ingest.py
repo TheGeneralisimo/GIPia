@@ -1,45 +1,69 @@
-# ingest.py
-"""Production-ready ingestion script"""
 import os
-from pathlib import Path
+from dotenv import load_dotenv
 
-import dotenv
-from langchain.document_loaders import DirectoryLoader, TextLoader, PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
-dotenv.load_dotenv()
+from langchain_community.document_loaders import (
+    TextLoader,
+    PyPDFLoader,
+    UnstructuredWordDocumentLoader
+)
 
-DATA_DIR = Path("data")
-VECTOR_DIR = Path("vectorstore")
+load_dotenv()
+
+DATA_DIR = "data/"
+DB_DIR = "db/"
+
 
 def load_documents():
     docs = []
-    if not DATA_DIR.exists():
-        return docs
-    for file in DATA_DIR.rglob("*"):
-        if file.suffix.lower() == ".txt":
-            docs.extend(TextLoader(str(file)).load())
-        elif file.suffix.lower() == ".pdf":
-            docs.extend(PyPDFLoader(str(file)).load())
+
+    for root, dirs, files in os.walk(DATA_DIR):
+        for f in files:
+            path = os.path.join(root, f)
+
+            if f.endswith(".txt"):
+                loader = TextLoader(path, encoding="utf-8")
+            elif f.endswith(".pdf"):
+                loader = PyPDFLoader(path)
+            elif f.endswith(".docx"):
+                loader = UnstructuredWordDocumentLoader(path)
+            else:
+                print(f"Archivo no soportado: {f}")
+                continue
+
+            docs.extend(loader.load())
+
     return docs
 
-def build_vectorstore(docs):
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
-    chunks = splitter.split_documents(docs)
-    embeddings = OpenAIEmbeddings()
-    store = FAISS.from_documents(chunks, embeddings)
-    VECTOR_DIR.mkdir(parents=True, exist_ok=True)
-    store.save_local(str(VECTOR_DIR))
 
-def main():
-    docs = load_documents()
-    if not docs:
-        print("No documents found.")
-        return
-    build_vectorstore(docs)
-    print("Vectorstore updated successfully.")
+def ingest():
+    # cargar documentos
+    documents = load_documents()
+    print(f"Documentos cargados: {len(documents)}")
+
+    # dividir chunks con la librería nueva
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=800,
+        chunk_overlap=100
+    )
+
+    chunks = splitter.split_documents(documents)
+    print(f"Chunks generados: {len(chunks)}")
+
+    # embeddings HF
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+    # crear vectorstore
+    db = FAISS.from_documents(chunks, embeddings)
+
+    # guardar
+    db.save_local(DB_DIR)
+
+    print("Vectorstore creado y guardado exitosamente.")
+
 
 if __name__ == "__main__":
-    main()
+    ingest()
